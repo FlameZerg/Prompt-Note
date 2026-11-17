@@ -1,0 +1,40 @@
+# 1. 基础配置
+language: "zh-CN" # 将 AI 审查意见默认语言设为中文
+
+# 2. 审查规则微调
+reviews:
+  profile: "chill" # 审查风格，可选: "chill" (温和建议) 或 "assertive" (严苛报错)
+  high_level_summary: false # 是否生成 PR 的高层次概述
+  sequence_diagrams: false # 是否自动生成 Mermaid 时序图
+  poem: false # 是否开启趣味诗歌概述（默认建议关闭）
+  
+  # 审查触发条件
+  auto_review:
+    enabled: true
+    drafts: false # 是否对草稿 (Draft) PR 进行自动审查
+  
+  # 路径过滤（剔除不需要审查的文件夹，例如第三方库或编译产物）
+  path_filters:
+   - "!**/node_modules/**"
+   - "!**/*.lock"
+   - "!**/dist/**"
+   - "!**/generated/**"
+   - "!**/build/**"
+   - "!**/pnpm-lock.yaml"
+   - "!**/package-lock.json"
+   - "!**/*.svg"
+   - "!**/*.png"
+   - "!**/*.jpg"
+
+  # 自定义审查指令 (Tone Instructions)
+  # 您可以在这里输入对 AI 审查人的人设要求或特定的代码规范
+  tone_instructions: |
+    不影响用户体验的前提下，进行代码审查来重点关注和指出高优先级的问题，包括：
+    1. 安全性缺陷、越权风险与数据溢出漏洞。
+    2. 内存泄漏、未释放的句柄以及可能引发程序崩溃的严重逻辑死循环。
+    3. 关键性能瓶颈与明显的边界条件缺失。
+    你可以提出关于代码可维护性、重构设计或最佳实践的中低优先级建议，但请保持反馈精炼，确保高优先级的安全与逻辑错误永远作为核心呈现。
+
+# 3. 聊天与交互
+chat:
+  auto_reply: true # 是否对您在 PR 下的回复进行自动追问应答
