@@ -1,217 +1,43 @@
-import React, { useState, useEffect, useCallback } from 'react';
-// @ts-ignore
-import { FolderIcon, PlusCircleIcon, StarIcon, TagIcon, SettingsIcon, SettingsIcon as CogIcon } from 'lucide-react';
-import { getAllTags, Tag } from '../services/db'; // 引入获取标签的函数和类型
-
-type SidebarProps = {
-  onNewPrompt: () => void;
-  onOpenTagManager?: () => void;
-  onAllPromptsClick: () => void;
-  onFavoritesClick: () => void;
-  onTagClick: (tagId: string) => void;
-  activeFilterMode: 'all' | 'favorites';
-  activeTagId: string | null;
-  onOpenSettings?: () => void;
-};
-
-// --- 精确的类型定义 ---
-// 基础 Props，所有项目共享
-type BaseSidebarItemProps = {
-  label: string;
-  active?: boolean;
-  onClick?: () => void;
-};
-
-// 通用项目的 Props，继承基础并添加必需的 icon
-type GenericSidebarItemProps = BaseSidebarItemProps & {
-  icon: React.ReactNode; // 图标现在是必需的
-};
-
-// 标签项目的 Props，继承基础并添加必需的 tagColor 和可选的 count
-type TagSidebarItemProps = BaseSidebarItemProps & {
-  tagColor: string; // 标签颜色是必需的
-  count?: number;
-  active?: boolean;
-  onClick?: () => void;
-};
-// --- 类型定义结束 ---
-
-// 通用侧边栏项目组件 (使用 GenericSidebarItemProps)
-const SidebarItem: React.FC<GenericSidebarItemProps> = ({ icon, label, active = false, onClick }) => {
-  // 非标签项的样式（所有提示词、收藏等）
-  return (
-    <li
-      className={`flex items-center px-3 py-2 rounded-lg mb-1 cursor-pointer group transition-all duration-150 ${active ? 'bg-primary-50 text-primary-600' : 'text-gray-600 hover:bg-gray-100'}`}
-      onClick={onClick}
-    >
-      <div className="flex items-center flex-1">
-        {/* icon 现在是必需的，直接使用 */}
-        <span className={`mr-2 ${active ? 'text-primary-600' : 'text-gray-500 group-hover:text-gray-700'}`}>{icon}</span>
-        <span className="text-sm font-medium">{label}</span>
-      </div>
-    </li>
-  );
-};
-
-// 标签专属的侧边栏项目组件 (使用 TagSidebarItemProps)
-const TagSidebarItem: React.FC<TagSidebarItemProps> = ({ label, count, tagColor, active, onClick }) => {
-  return (
-    <li
-      className={`flex items-center px-3 py-2 rounded-lg mb-1 cursor-pointer group transition-all duration-150 ${active ? 'bg-primary-50 text-primary-600' : 'text-gray-600 hover:bg-gray-100'}`}
-      onClick={onClick}
-    >
-      <div className="flex items-center flex-1">
-        {/* 固定使用 TagIcon，颜色由 props 决定 */}
-        <TagIcon size={18} className="mr-2 flex-shrink-0" style={{ color: tagColor }} />
-        <span className="text-sm font-medium truncate" title={label}>{label}</span>
-      </div>
-      {/* 显示数量徽章 */}
-      {count !== undefined && count > 0 && (
-        <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 group-hover:bg-gray-200 transition-colors">
-          {count}
-        </span>
-      )}
-    </li>
-  );
-};
-
-const Sidebar: React.FC<SidebarProps> = ({
-  onNewPrompt,
-  onOpenTagManager,
-  onAllPromptsClick,
-  onFavoritesClick,
-  onTagClick,
-  activeFilterMode,
-  activeTagId,
-  onOpenSettings
-}) => {
-  // tags 状态现在包含 count
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [isLoadingTags, setIsLoadingTags] = useState(true);
-
-  // 获取标签数据 - 改为可调用的函数
-  const fetchTags = useCallback(async () => {
-    try {
-      setIsLoadingTags(true);
-      const fetchedTags = await getAllTags(); // 获取带 count 的标签
-      setTags(fetchedTags);
-    } catch (err) {
-      console.error('加载标签失败:', err);
-    } finally {
-      setIsLoadingTags(false);
-    }
-  }, []);
-
-  // 初始加载标签
-  useEffect(() => {
-    fetchTags();
-
-    // 添加监听 tauri 事件，当标签数据变更时刷新列表
-    const setupListener = async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        const unlisten = await listen('tags-changed', () => {
-          console.log('收到标签变更事件，刷新标签列表');
-          fetchTags();
-        });
-
-        return unlisten;
-      } catch (err) {
-        console.error('设置标签变更监听失败:', err);
-        return () => { };
-      }
-    };
-
-    const unlistenPromise = setupListener();
-
-    // 清理函数
-    return () => {
-      unlistenPromise.then(unlisten => unlisten());
-    };
-  }, [fetchTags]);
-
-  // 处理标签管理按钮点击
-  const handleTagManagerClick = () => {
-    // 打开标签管理器前刷新标签列表
-    fetchTags().then(() => {
-      if (onOpenTagManager) onOpenTagManager();
-    });
-  };
-
-  return (
-    <div className="w-60 h-full border-r border-gray-200 bg-white flex flex-col">
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-lg font-semibold text-gray-800">提示词精灵</h1>
-        </div>
-
-        <div className="mb-2">
-          <button
-            className="w-full flex items-center justify-center py-2 px-4 bg-primary-50 text-primary-500 hover:bg-primary-100 rounded-lg transition-colors duration-150 shadow-sm"
-            onClick={onNewPrompt}
-          >
-            <PlusCircleIcon size={18} className="mr-2" />
-            <span className="text-sm font-medium">新建提示词</span>
-          </button>
-        </div>
-      </div>
-
-      <nav className="flex-1 px-2 overflow-y-auto hide-scrollbar">
-        <ul>
-          <SidebarItem
-            icon={<FolderIcon size={18} />}
-            label="所有提示词"
-            active={activeFilterMode === 'all' && !activeTagId}
-            onClick={onAllPromptsClick}
-          />
-          <SidebarItem
-            icon={<StarIcon size={18} />}
-            label="收藏提示词"
-            active={activeFilterMode === 'favorites'}
-            onClick={onFavoritesClick}
-          />
-        </ul>
-
-        <div className="mt-6 mb-2 px-3 flex items-center justify-between">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">标签</h3>
-          <button
-            className="p-1 text-gray-400 hover:text-primary-500 rounded transition-colors"
-            onClick={handleTagManagerClick}
-            title="管理标签"
-          >
-            <CogIcon size={14} />
-          </button>
-        </div>
-
-        {isLoadingTags ? (
-          <div className="px-3 text-sm text-gray-500">加载中...</div>
-        ) : (
-          <ul>
-            {tags.map(tag => (
-              <TagSidebarItem
-                key={tag.id}
-                label={tag.name}
-                tagColor={tag.color}
-                count={tag.count}
-                active={activeTagId === tag.id}
-                onClick={() => onTagClick(tag.id)}
-              />
-            ))}
-            {tags.length === 0 && !isLoadingTags && (
-              <li className="px-3 py-2 text-sm text-gray-400">暂无标签</li>
-            )}
-          </ul>
-        )}
-      </nav>
-
-      <div className="p-4 border-t border-gray-200 mt-auto">
-        <button className="flex items-center text-gray-600 hover:text-gray-800 transition-colors duration-150 w-full" onClick={onOpenSettings}>
-          <SettingsIcon size={18} className="mr-2" />
-          <span className="text-sm">设置</span>
-        </button>
-      </div>
-    </div>
-  );
-};
-
-export default Sidebar;
+import { ArrowUpRight, Folder, FolderOpen, Languages, LayoutDashboard, Moon, Plus, Settings, Sun } from 'lucide-react';
+import type { Library, Language, Theme } from '../types';
+import type { Messages } from '../locales/zh';
+import { useMemo } from 'react';
+import { groupPromptsByCategory } from '../utils/library';
+interface Props {
+  library: Library; categoryId: string | null; language: Language; theme: Theme; t: Messages;
+  onSelect: (id: string | null) => void; onNew: () => void; onCategory: () => void;
+  onLanguage: () => void; onTheme: () => void; onSettings: () => void;
+}
+export default function Sidebar({ library, categoryId, language, theme, t, onSelect, onNew, onCategory, onLanguage, onTheme, onSettings }: Props) {
+  const promptsByCategory = useMemo(() => groupPromptsByCategory(library.prompts), [library.prompts]);
+  const ThemeIcon = theme === 'light' ? Sun : Moon;
+  const themeAction = theme === 'light' ? t.switchToDarkTheme : t.switchToLightTheme;
+  return <aside className="sidebar">
+    <a href="#workspace" aria-label="Prompt Note" className="brand" onClick={event => { event.preventDefault(); onSelect(null); }}>
+      <span className="brand-mark"><img src="/mark.svg" alt="" width={38} height={38} /></span><span>Prompt Note<small>{t.brandDescription}</small></span>
+    </a>
+    <button className="button sidebar-create" aria-label={t.newPrompt} title={t.newPrompt} onClick={onNew}><Plus size={18} aria-hidden="true" /><span>{t.newPrompt}</span><ArrowUpRight size={16} aria-hidden="true" /></button>
+    <nav aria-label={t.workspace}>
+      <button className={`nav-item ${categoryId === null ? 'active' : ''}`} aria-label={t.allProjects} title={t.allProjects} onClick={() => onSelect(null)} aria-current={categoryId === null ? 'page' : undefined}>
+        <LayoutDashboard size={18} aria-hidden="true" /><span>{t.allProjects}</span><span className="nav-count">{library.categories.length}</span>
+      </button>
+      <div className="nav-section"><span>{t.projects}</span><button className="icon-button" aria-label={t.newCategory} onClick={onCategory}><Plus size={17} /></button></div>
+      <div className="project-nav">{library.categories.map(category => {
+        const Icon = category.id === categoryId ? FolderOpen : Folder;
+        return <button key={category.id} className={`nav-item ${category.id === categoryId ? 'active' : ''}`}
+          onClick={() => onSelect(category.id)} aria-label={category.id === 'general' ? t.general : category.name} title={category.id === 'general' ? t.general : category.name} aria-current={category.id === categoryId ? 'page' : undefined}>
+          <Icon size={18} aria-hidden="true" /><span>{category.id === 'general' ? t.general : category.name}</span>
+          <span className="nav-count">{promptsByCategory.get(category.id)?.length ?? 0}</span>
+        </button>;
+      })}</div>
+    </nav>
+    <footer className="sidebar-footer">
+      <button className="nav-item" onClick={onTheme} aria-label={themeAction} title={themeAction}>
+        <ThemeIcon size={18} aria-hidden="true" /><span>{theme === 'light' ? t.lightTheme : t.darkTheme}</span>
+      </button>
+      {/* 文字与代码均表示当前语言，操作名称明确指出切换目标。 */}
+      <button className="nav-item" onClick={onLanguage} aria-label={language === 'zh' ? 'Switch to English' : '切换为中文'} title={language === 'zh' ? 'Switch to English' : '切换为中文'}><Languages size={18} aria-hidden="true" /><span>{language === 'zh' ? '中文' : 'English'}</span><span className="language-code">{language.toUpperCase()}</span></button>
+      <button className="nav-item" onClick={onSettings} aria-label={t.settings} title={t.settings}><Settings size={18} aria-hidden="true" /><span>{t.settings}</span></button>
+    </footer>
+  </aside>;
+}

@@ -1,397 +1,153 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { ArrowLeft, CircleAlert, FolderOpen, Minus, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import Sidebar from './components/Sidebar';
-import MainContent from './components/MainContent';
+import PromptCard from './components/PromptCard';
 import PromptEditor from './components/PromptEditor';
-import TagManager from './components/TagManager'; // 导入标签管理组件
-import Settings from './components/Settings'; // 导入设置组件
-import ConfirmDialog from './components/ConfirmDialog'; // 导入自定义对话框
-import { initDatabase, getAllPrompts, createPrompt, updatePrompt, toggleFavorite, deletePrompt, Prompt, PromptInput, updateTrayMenu, copyPromptToClipboard, getPrompt, updatePromptLastUsed } from './services/db';
+import ProjectOverview from './components/ProjectOverview';
+import WorkspaceToolbar from './components/WorkspaceToolbar';
+import CategoryDialog from './components/CategoryDialog';
+import Dialog from './components/Dialog';
+import Settings from './components/Settings';
+import { useLibrary } from './hooks/useLibrary';
+import { usePreferences } from './hooks/usePreferences';
+import { useToast } from './hooks/useToast';
+import { syncTray } from './services/tray';
+import { copyPrompt } from './services/db';
+import { categoryName, clampZoom, filterPrompts, reorderIds } from './utils/library';
+import zh from './locales/zh';
+import en from './locales/en';
+import type { Category, Prompt, PromptInput } from './types';
 
-function App() {
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false); // 添加标签管理状态
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false); // 添加设置状态
-  const [searchTerm, setSearchTerm] = useState(''); // 添加搜索词状态
+export default function App() {
+  const prefs = usePreferences();
+  const t = prefs.language === 'zh' ? zh : en;
+  const notify = useToast();
+  const { library, loading, loadError, busy, reload, commit } = useLibrary(t);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [favorites, setFavorites] = useState(false);
+  const [editor, setEditor] = useState<{ prompt: Prompt | null } | null>(null);
+  const [categoryEditor, setCategoryEditor] = useState<{ category: Category | null } | null>(null);
+  const [deletion, setDeletion] = useState<{ kind: 'prompt' | 'category'; id: string } | null>(null);
+  const [settings, setSettings] = useState(false);
+  const trayQueue = useRef(Promise.resolve());
+  const visible = categoryId ? filterPrompts(library.prompts, categoryId, search, favorites) : [];
+  const allInCategory = categoryId ? filterPrompts(library.prompts, categoryId, '', false) : [];
 
-  // 当前过滤模式
-  const [filterMode, setFilterMode] = useState<'all' | 'favorites'>('all');
-  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
-
-  // 过滤后的提示词
-  const filteredPrompts = React.useMemo(() => {
-    let result = [...prompts];
-
-    // 收藏过滤
-    if (filterMode === 'favorites') {
-      result = result.filter(prompt => prompt.isFavorite);
-    }
-
-    // 标签过滤
-    if (selectedTagId) {
-      result = result.filter(prompt =>
-        prompt.tags.some(tag => tag.id === selectedTagId)
-      );
-    }
-
-    // 搜索过滤
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase().trim();
-      result = result.filter(prompt =>
-        prompt.title.toLowerCase().includes(term) ||
-        prompt.content.toLowerCase().includes(term) ||
-        prompt.tags.some(tag => tag.name.toLowerCase().includes(term))
-      );
-    }
-
-    return result;
-  }, [prompts, filterMode, selectedTagId, searchTerm]);
-
-  // 确认对话框状态
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [promptToDeleteId, setPromptToDeleteId] = useState<string | null>(null);
-
-  // 初始化数据库并加载提示词
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null); // 清除旧错误
-        console.log('App: Initializing database...');
-        await initDatabase(); // 等待初始化完成
-        console.log('App: Database initialized. Loading prompts...');
-        const loadedPrompts = await getAllPrompts();
-        setPrompts(loadedPrompts);
-        console.log('App: Prompts loaded.');
-
-        // 启动时更新托盘菜单
-        updateTrayMenu().catch(err => {
-          console.error('启动时更新托盘菜单失败:', err);
-        });
-
-        // 监听托盘菜单中提示词被选择的事件
-        const { listen } = await import('@tauri-apps/api/event');
-        // 监听常规复制事件
-        const unlistenTrayPrompt = await listen('tray-prompt-selected', (event) => {
-          const promptId = event.payload as string;
-          console.log(`托盘菜单选择了提示词: ${promptId}`);
-          copyPromptToClipboard(promptId)
-            .then(success => {
-              if (success) {
-                console.log('已通过托盘菜单复制提示词');
-              } else {
-                console.error('通过托盘菜单复制提示词失败');
-              }
-            })
-            .catch(err => {
-              console.error('处理托盘菜单选择事件时出错:', err);
-            });
-        });
-
-        // 监听直接粘贴到输入框的事件
-        const unlistenPastePrompt = await listen('paste-prompt-content', async (event) => {
-          const promptId = event.payload as string;
-          console.log(`准备将提示词直接插入到输入框: ${promptId}`);
-
-          try {
-            // 1. 获取提示词内容
-            const prompt = await getPrompt(promptId);
-            if (!prompt) {
-              console.error(`找不到ID为${promptId}的提示词`);
-              return;
-            }
-
-            // 2. 将内容复制到剪贴板
-            const { writeText } = await import('@tauri-apps/plugin-clipboard-manager');
-            await writeText(prompt.content);
-            console.log(`提示词 "${prompt.title}" 已复制到剪贴板`);
-
-            // 3. 检查是否启用了自动插入功能
-            const trayAutoInsert = localStorage.getItem('trayAutoInsert') !== 'false'; // 默认为 true
-
-            if (trayAutoInsert) {
-              // 模拟粘贴操作
-              const { invoke } = await import('@tauri-apps/api/core');
-              await invoke('simulate_paste');
-              console.log('已触发粘贴操作');
-            } else {
-              console.log('自动插入功能已禁用，仅复制到剪贴板');
-            }
-
-            // 4. 更新最后使用时间
-            await updatePromptLastUsed(promptId);
-          } catch (err) {
-            console.error('粘贴提示词内容时出错:', err);
-          }
-        });
-
-        // 组件卸载时移除事件监听
-        return () => {
-          unlistenTrayPrompt();
-          unlistenPastePrompt();
-        };
-      } catch (err) {
-        console.error('App: 加载数据失败:', err);
-        setError('无法加载数据，请检查数据库连接或重启应用。');
-      } finally {
-        setIsLoading(false);
+    let disposed = false;
+    const pending = listen<string>('tray-feedback', event => {
+      const messages = { copiedTray: t.copiedTray, copyFailed: t.copyFailed, copiedHistoryFailed: t.copiedHistoryFailed, pasteFailed: t.pasteFailed };
+      // 事件只接受自身定义的状态，拒绝原型属性被当作 React 文案。
+      if (Object.hasOwn(messages, event.payload)) {
+        notify(messages[event.payload as keyof typeof messages], event.payload === 'copiedTray' ? 'success' : 'error');
       }
-    };
+    });
+    // 统一由清理函数注销，避免订阅异步完成时重复调用同一个 unlisten。
+    void pending.catch((error: unknown) => {
+      console.error('监听托盘反馈失败：', error); if (!disposed) notify(t.traySyncFailed, 'error');
+    });
+    return () => { disposed = true; void pending.then(unlisten => unlisten()).catch(() => { /* 上方已报告监听错误。 */ }); };
+  }, [t, notify]);
+  useEffect(() => {
+    if (!library.categories.length || loadError) return;
+    // 串行更新避免快速切换语言与连续编辑时旧菜单覆盖新菜单。
+    trayQueue.current = trayQueue.current.then(() => syncTray(library, t)).catch((error: unknown) => {
+      console.error('同步托盘失败：', error); notify(t.traySyncFailed, 'error');
+    });
+  }, [library, t, loadError, notify]);
 
-    loadData();
-  }, []); // 空依赖数组，确保只运行一次
-
-  const handleEditorOpen = (prompt?: Prompt) => {
-    setEditingPrompt(prompt || null);
-    setIsEditorOpen(true);
-  };
-
-  const handleEditorClose = () => {
-    setIsEditorOpen(false);
-    setEditingPrompt(null);
-  };
-
-  const handleSavePrompt = async (promptData: PromptInput) => {
-    setError(null); // 清除旧错误
+  function selectCategory(id: string | null) {
+    // 分类切换统一回到开头，兼容常规卡片滚动与短窗口整区滚动。
+    document.getElementById('workspace')?.scrollTo({ top: 0 });
+    document.querySelector('.content-scroll')?.scrollTo({ top: 0 });
+    setCategoryId(id); setSearch(''); setFavorites(false);
+  }
+  async function copy(prompt: Prompt) {
     try {
-      if (editingPrompt) {
-        const updatedPrompt = await updatePrompt(editingPrompt.id, promptData);
-        setPrompts(prevPrompts =>
-          prevPrompts.map(p => p.id === updatedPrompt.id ? updatedPrompt : p)
-        );
-      } else {
-        const newPrompt = await createPrompt(promptData);
-        setPrompts(prevPrompts => [newPrompt, ...prevPrompts]);
-      }
-      setIsEditorOpen(false);
-      setEditingPrompt(null);
-    } catch (err) {
-      console.error('保存提示词失败:', err);
-      setError('保存提示词失败，请重试。');
-    }
-  };
-
-  // 打开删除确认对话框
-  const handleDeletePrompt = async (id: string) => {
-    setPromptToDeleteId(id); // 设置要删除的 ID
-    setIsConfirmOpen(true); // 打开确认对话框
-  };
-
-  // 确认删除操作
-  const confirmDeletion = async () => {
-    if (!promptToDeleteId) return;
-    setError(null);
-    try {
-      await deletePrompt(promptToDeleteId);
-      setPrompts(prevPrompts => prevPrompts.filter(p => p.id !== promptToDeleteId));
-    } catch (err) {
-      console.error('删除提示词失败:', err);
-      setError('删除提示词失败，请重试。');
-    } finally {
-      setIsConfirmOpen(false); // 关闭对话框
-      setPromptToDeleteId(null); // 清空 ID
-    }
-  };
-
-  // 取消删除操作
-  const cancelDeletion = () => {
-    setIsConfirmOpen(false); // 关闭对话框
-    setPromptToDeleteId(null); // 清空 ID
-  };
-
-  const handleFavoriteToggle = async (id: string) => {
-    setError(null);
-    try {
-      const isFavorite = await toggleFavorite(id);
-      setPrompts(prevPrompts =>
-        prevPrompts.map(p => p.id === id ? { ...p, isFavorite } : p)
-      );
-    } catch (err) {
-      console.error('切换收藏状态失败:', err);
-      setError('操作失败，请重试。');
-    }
-  };
-
-  // 添加标签状态变化事件处理
-  const handleTagsChanged = async () => {
-    // 当标签被修改或删除后重新加载提示词列表，确保标签变更反映到UI上
-    try {
-      setIsLoading(true);
-      const loadedPrompts = await getAllPrompts();
-      setPrompts(loadedPrompts);
-    } catch (err) {
-      console.error('刷新提示词列表失败:', err);
-      setError('刷新数据失败，请重试。');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 打开标签管理器
-  const openTagManager = () => {
-    setIsTagManagerOpen(true);
-  };
-
-  // 关闭标签管理器
-  const closeTagManager = async () => {
-    setIsTagManagerOpen(false);
-    // 关闭标签管理器后刷新数据
-    await handleTagsChanged();
-  };
-
-  // 打开设置
-  const openSettings = () => {
-    setIsSettingsOpen(true);
-  };
-
-  // 关闭设置
-  const closeSettings = () => {
-    setIsSettingsOpen(false);
-  };
-
-  // 处理侧边栏收藏项点击
-  const handleFavoritesClick = () => {
-    setFilterMode('favorites');
-    setSelectedTagId(null);
-  };
-
-  // 处理"所有提示词"点击
-  const handleAllPromptsClick = () => {
-    setFilterMode('all');
-    setSelectedTagId(null);
-  };
-
-  // 处理标签点击
-  const handleTagClick = (tagId: string) => {
-    setSelectedTagId(tagId);
-    setFilterMode('all'); // 重置收藏过滤以避免混淆
-  };
-
-  // 处理搜索输入变化
-  const handleSearchChange = (term: string) => {
-    setSearchTerm(term);
-  };
-
-  // 获取当前视图的标题
-  const getContentTitle = () => {
-    let baseTitle = '';
-
-    // 确定基础标题（根据过滤条件）
-    if (selectedTagId) {
-      const tag = prompts
-        .flatMap(p => p.tags)
-        .find(t => t.id === selectedTagId);
-      baseTitle = tag ? `标签: ${tag.name}` : '已过滤提示词';
-    } else {
-      baseTitle = filterMode === 'favorites' ? '收藏提示词' : '所有提示词';
-    }
-
-    // 如果有搜索词，追加搜索信息
-    if (searchTerm.trim()) {
-      return `${baseTitle} (搜索: "${searchTerm}")`;
-    }
-
-    return baseTitle;
-  };
-
-  return (
-    <>
-      {/* 标题栏与内容之间的分割线 */}
-      <div className="fixed top-0 left-0 right-0 h-[1px] bg-gray-200 z-10"></div>
-      <div className="flex h-screen w-screen overflow-hidden bg-gray-100">
-        <Sidebar
-          onNewPrompt={() => handleEditorOpen()}
-          onOpenTagManager={openTagManager}
-          onAllPromptsClick={handleAllPromptsClick}
-          onFavoritesClick={handleFavoritesClick}
-          onTagClick={handleTagClick}
-          activeFilterMode={filterMode}
-          activeTagId={selectedTagId}
-          onOpenSettings={openSettings}
-        />
-
-        <MainContent
-          title={getContentTitle()}
-          prompts={filteredPrompts}
-          isLoading={isLoading}
-          onFavoriteToggle={handleFavoriteToggle}
-          onEdit={handleEditorOpen}
-          onDelete={handleDeletePrompt}
-          searchTerm={searchTerm}
-          onSearchChange={handleSearchChange}
-        />
-
-        {/* 错误消息 */}
-        {error && (
-          <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg z-50 shadow-md">
-            <span>{error}</span>
-            <button
-              className="ml-4 text-red-500 hover:text-red-700 font-semibold"
-              onClick={() => setError(null)}
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        {/* 浮动操作按钮区 */}
-        <div className="fixed right-8 bottom-8 flex flex-col space-y-3 items-end">
-          {/* 添加提示词按钮 */}
-          <button
-            className="w-14 h-14 bg-primary-500 hover:bg-primary-600 text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
-            onClick={() => handleEditorOpen()}
-            aria-label="创建新提示词"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+      const { historySaved } = await copyPrompt(prompt.id);
+      notify(historySaved ? t.copied : t.copiedHistoryFailed, historySaved ? 'success' : 'error');
+    } catch (error) { console.error('复制提示词失败：', error); notify(t.copyFailed, 'error'); }
+  }
+  async function save(input: PromptInput): Promise<boolean> {
+    const success = await commit({ kind: 'savePrompt', ...input }, t.saved);
+    if (success) { setEditor(null); if (!categoryId) selectCategory(input.categoryIds[0]); }
+    return success;
+  }
+  function move(source: string, target: string) {
+    if (!categoryId || busy) return;
+    const ids = allInCategory.map(prompt => prompt.id);
+    const ordered = reorderIds(ids, source, target);
+    if (ordered.every((id, index) => id === ids[index])) return;
+    void commit({ kind: 'reorder', categoryId, ids: ordered }, t.reordered);
+  }
+  async function confirmDelete() {
+    if (!deletion) return;
+    const success = await commit({ kind: deletion.kind === 'prompt' ? 'deletePrompt' : 'deleteCategory', id: deletion.id }, deletion.kind === 'prompt' ? t.deleted : t.categoryDeleted);
+    if (success) setDeletion(null);
+  }
+  const overview = categoryId === null;
+  const pageStyle: CSSProperties & { '--page-zoom': number } = { zoom: prefs.zoom, height: `${100 / prefs.zoom}dvh`, '--page-zoom': prefs.zoom };
+  return <div className="app-shell" style={pageStyle}>
+    <Sidebar library={library} categoryId={categoryId} t={t} language={prefs.language} theme={prefs.theme}
+      onTheme={() => prefs.setTheme(value => value === 'light' ? 'dark' : 'light')}
+      onSelect={selectCategory} onNew={() => setEditor({ prompt: null })} onCategory={() => setCategoryEditor({ category: null })}
+      onLanguage={() => {
+        const language = prefs.language === 'zh' ? 'en' : 'zh';
+        prefs.setLanguage(language); notify(language === 'zh' ? zh.languageChanged : en.languageChanged);
+      }} onSettings={() => setSettings(true)} />
+    <main className="workspace" id="workspace">
+      <header className="workspace-header">
+        <div className="breadcrumb"><FolderOpen size={16} aria-hidden="true" /><span>Prompt Note</span><span>/</span><span>{overview ? t.workspace : t.projects}</span></div>
+        <div className="heading-row"><div>
+          {!overview && <button className="text-button back-button" onClick={() => selectCategory(null)}><ArrowLeft size={15} aria-hidden="true" />{t.back}</button>}
+          <h1>{overview ? t.allProjects : categoryName(library, categoryId, t.general)}</h1>
+          <p>{overview ? t.projectHint : t.libraryHint}</p>
+        </div>
+          <button className="button primary desktop-create" disabled={loading || loadError} onClick={() => overview ? setCategoryEditor({ category: null }) : setEditor({ prompt: null })}>
+            <Plus size={18} aria-hidden="true" />{overview ? t.newCategory : t.newPrompt}
           </button>
         </div>
-
-        {/* 提示词编辑器模态框 */}
-        <PromptEditor
-          isOpen={isEditorOpen}
-          initialData={editingPrompt ? {
-            id: editingPrompt.id,
-            title: editingPrompt.title,
-            content: editingPrompt.content,
-            tags: editingPrompt.tags
-          } : {
-            title: '',
-            content: '',
-            tags: []
-          }}
-          onClose={handleEditorClose}
-          onSave={handleSavePrompt}
-        />
-
-        {/* 标签管理模态框 */}
-        <TagManager
-          isOpen={isTagManagerOpen}
-          onClose={closeTagManager}
-        />
-
-        {/* 设置模态框 */}
-        <Settings
-          isOpen={isSettingsOpen}
-          onClose={closeSettings}
-        />
-
-        {/* 删除确认对话框 */}
-        <ConfirmDialog
-          isOpen={isConfirmOpen}
-          title="确认删除"
-          message="确定要删除这个提示词吗？此操作无法撤销。"
-          confirmText="删除"
-          onConfirm={confirmDeletion}
-          onCancel={cancelDeletion}
-        />
+      </header>
+      <WorkspaceToolbar overview={overview} search={search} setSearch={setSearch} favorites={favorites} setFavorites={setFavorites}
+        view={prefs.view} setView={prefs.setView} count={overview ? library.categories.length : visible.length} t={t}
+        onNew={() => overview ? setCategoryEditor({ category: null }) : setEditor({ prompt: null })} />
+      <section className="content-scroll" aria-busy={loading} aria-label={overview ? t.projects : t.allPrompts}>
+        {loading ? <div className="empty-state" role="status"><RefreshCw size={27} className="loading-icon" /><p>{t.loading}</p></div>
+          : loadError ? <div className="empty-state" role="alert"><CircleAlert size={32} /><h2>{t.loadError}</h2><button className="button primary" onClick={() => { void reload(); }}><RefreshCw size={17} />{t.retry}</button></div>
+          : overview ? <ProjectOverview library={library} search={search} t={t} busy={busy}
+            onOpen={selectCategory} onNew={() => setCategoryEditor({ category: null })} onEdit={category => setCategoryEditor({ category })}
+            onDelete={category => setDeletion({ kind: 'category', id: category.id })} />
+          : !visible.length ? <div className="empty-state"><span className="empty-symbol"><Sparkles size={32} aria-hidden="true" /></span>
+            <h2>{search ? t.noResults : favorites ? t.noFavorites : t.empty}</h2>
+            <p>{search ? t.noResultsHint : favorites ? t.noFavoritesHint : t.emptyHint}</p>
+            <button className="button primary" onClick={() => search || favorites ? (setSearch(''), setFavorites(false)) : setEditor({ prompt: null })}>
+              <Plus size={17} aria-hidden="true" />{search || favorites ? t.allPrompts : t.newPrompt}
+            </button>
+          </div> : <div className={`prompt-collection ${prefs.view}`}>
+            {visible.map(prompt => <PromptCard key={prompt.id} prompt={prompt} t={t} language={prefs.language} busy={busy}
+              onCopy={value => { void copy(value); }} onEdit={value => setEditor({ prompt: value })} onDelete={value => setDeletion({ kind: 'prompt', id: value.id })}
+              onFavorite={value => { void commit({ kind: 'toggleFavorite', id: value.id }, value.isFavorite ? t.unfavorited : t.favorited); }} onMove={move} />)}
+          </div>}
+      </section>
+      <footer className="workspace-footer">
+        <div className="zoom-controls" role="group" aria-label={t.zoom} title={t.zoomHint}>
+          <button className="icon-button" aria-label={t.zoomOut} disabled={prefs.zoom <= 0.5} onClick={() => prefs.setZoom(clampZoom(prefs.zoom - 0.1))}><Minus size={14} /></button>
+          <button className="zoom-value" onClick={() => prefs.setZoom(1)} aria-label={t.resetZoom}>{Math.round(prefs.zoom * 100)}%</button>
+          <button className="icon-button" aria-label={t.zoomIn} disabled={prefs.zoom >= 2} onClick={() => prefs.setZoom(clampZoom(prefs.zoom + 0.1))}><Plus size={14} /></button>
+        </div>
+      </footer>
+    </main>
+    {editor && !loading && !loadError && <PromptEditor prompt={editor.prompt} categoryId={categoryId ?? 'general'} categories={library.categories} t={t} onClose={() => setEditor(null)} onSave={save} />}
+    {categoryEditor && <CategoryDialog category={categoryEditor.category} categories={library.categories} t={t} onClose={() => setCategoryEditor(null)}
+      onSave={name => commit({ kind: 'saveCategory', id: categoryEditor.category?.id ?? null, name }, categoryEditor.category ? t.categoryRenamed : t.categoryCreated)} />}
+    {deletion && <Dialog heading={deletion.kind === 'prompt' ? t.deletePrompt : t.deleteCategory} closeLabel={t.close} busy={busy} onClose={() => setDeletion(null)}>
+      <div className="editor-form"><p className="dialog-description">{deletion.kind === 'prompt' ? t.deletePromptHint : t.deleteCategoryHint}</p>
+        <footer className="dialog-footer"><button className="button secondary" disabled={busy} onClick={() => setDeletion(null)}>{t.cancel}</button>
+          <button className="button destructive" disabled={busy} onClick={() => { void confirmDelete(); }}>{busy ? t.saving : t.confirmDelete}</button></footer>
       </div>
-    </>
-  );
+    </Dialog>}
+    {settings && <Settings palette={prefs.palette} t={t} onClose={() => setSettings(false)} onPalette={prefs.setPalette} />}
+  </div>;
 }
-
-export default App;

@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "提示词精灵",
+  "productName": "Prompt Note",
+  "mainBinaryName": "Prompt Note",
   "version": "0.1.0",
-  "identifier": "com.chriszou.promptgenie",
+  "identifier": "promptnote",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,18 +13,21 @@
   "app": {
     "windows": [
       {
-        "title": "提示词精灵",
-        "width": 800,
-        "height": 600
+        "title": "Prompt Note",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 640,
+        "minHeight": 480
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "windows": { "webviewInstallMode": { "type": "embedBootstrapper" } },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -33,7 +37,7 @@
     ]
   },
   "plugins": {
-    "sql": { },
+    "sql": { "preload": ["sqlite:promptnote.db"] },
     "clipboard-manager": null
   }
 }

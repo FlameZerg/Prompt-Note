@@ -9,6 +9,8 @@
     "lib": [
       "ES2023"
     ],
+    "types": ["node"],
+    "noEmit": true,
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",

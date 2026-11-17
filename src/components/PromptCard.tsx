@@ -1,97 +1,51 @@
-import React from 'react';
-// @ts-ignore
-import { StarIcon, CopyIcon, PencilIcon, TagIcon, TrashIcon } from 'lucide-react';
-import { Tag } from '../services/db';
-import { formatRelativeTime } from '../utils/time';
-
-type PromptCardProps = {
-  id: string;
-  title: string;
-  content: string;
-  tags: Tag[];
-  isFavorite: boolean;
-  dateModified: string;
-  onFavoriteToggle: (id: string) => void;
-  onCopy: (id: string) => void;
-  onEdit: () => void;
-  onDelete: (id: string) => void;
-};
-
-const PromptCard: React.FC<PromptCardProps> = ({
-  id,
-  title,
-  content,
-  tags,
-  isFavorite,
-  dateModified,
-  onFavoriteToggle,
-  onCopy,
-  onEdit,
-  onDelete
-}) => {
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-150 overflow-hidden flex flex-col">
-      <div className="p-4 flex-1">
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="text-base font-medium text-gray-800 line-clamp-1">{title}</h3>
-          <button
-            className={`p-1 rounded-full ${isFavorite ? 'text-yellow-400 hover:text-yellow-500' : 'text-gray-300 hover:text-gray-400'}`}
-            onClick={() => onFavoriteToggle(id)}
-          >
-            <StarIcon size={18} fill={isFavorite ? 'currentColor' : 'none'} />
-          </button>
-        </div>
-
-        <p className="text-sm text-gray-600 mb-3 line-clamp-3">{content}</p>
-
-        <div className="flex flex-wrap gap-1 mb-3">
-          {tags.map(tag => (
-            <div
-              key={tag.id}
-              className="flex items-center px-2 py-1 rounded-full text-xs"
-              style={{
-                backgroundColor: `${tag.color}15`,
-                color: tag.color
-              }}
-            >
-              <TagIcon size={12} className="mr-1" />
-              {tag.name}
-            </div>
-          ))}
-        </div>
+import { Pencil, Star, Trash2 } from 'lucide-react';
+import { useCardDrag } from '../hooks/useCardDrag';
+import type { Prompt, Language } from '../types';
+import type { Messages } from '../locales/zh';
+interface Props {
+  prompt: Prompt; t: Messages; language: Language; busy: boolean;
+  onCopy: (prompt: Prompt) => void; onEdit: (prompt: Prompt) => void;
+  onDelete: (prompt: Prompt) => void; onFavorite: (prompt: Prompt) => void;
+  onMove: (source: string, target: string) => void;
+}
+export default function PromptCard({ prompt, t, language, busy, onCopy, onEdit, onDelete, onFavorite, onMove }: Props) {
+  const { dragging, canCopy, enableKeyboardCopy, handlers } = useCardDrag(prompt.id, onMove, busy);
+  const date = new Date(prompt.dateModified.endsWith('Z') ? prompt.dateModified : `${prompt.dateModified.replace(' ', 'T')}Z`);
+  return <article data-prompt-id={prompt.id} className={`prompt-card ${dragging ? 'is-dragging' : ''}`}
+    draggable={false} onDragStart={event => event.preventDefault()}
+    {...handlers}
+    onClick={event => {
+      if ((event.target as HTMLElement).closest('button') || !canCopy() || busy) return;
+      if (window.getSelection()?.toString()) return;
+      onCopy(prompt);
+    }}
+    onContextMenu={event => { if (dragging) event.preventDefault(); }}>
+    {/* 内二外三，沿用原内圈约 5.83 的点距；仅作提示，不限制整卡拖动。 */}
+    <svg className="drag-corner" viewBox="0 0 32 32" aria-hidden="true">
+      <g fill="currentColor">
+        <circle cx="12" cy="7.877" r="1.4" /><circle cx="7.877" cy="12" r="1.4" />
+        <circle cx="18" cy="10" r="1.4" /><circle cx="15" cy="15" r="1.4" /><circle cx="10" cy="18" r="1.4" />
+      </g>
+    </svg>
+    <div className="card-top"><div className="tags">{prompt.tags.length ? prompt.tags.map(tag => <span className="tag" key={tag.id} title={tag.name}>{tag.name}</span>) : <span className="untagged">{t.noTags}</span>}</div></div>
+    <button className="copy-surface" aria-label={`${t.copyHint}: ${prompt.content.slice(0, 70)}`} title={prompt.content} tabIndex={0}
+      disabled={busy} onClick={() => { if (canCopy()) onCopy(prompt); }}
+      onKeyDown={event => {
+        // 仅恢复原生按钮的键盘复制，排序统一由指针拖动处理。
+        if (event.key === 'Enter' || event.key === ' ') enableKeyboardCopy();
+      }} />
+    <p className="prompt-text">{prompt.content}</p>
+    <footer className="card-footer">
+      <time dateTime={prompt.dateModified} title={`${t.updated} ${date.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US')}`}>
+        {date.toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' })}
+      </time>
+      <div className="card-actions">
+        <button className={`text-button ${prompt.isFavorite ? 'is-favorite' : ''}`} disabled={busy} aria-label={prompt.isFavorite ? t.unfavorite : t.favorite} title={prompt.isFavorite ? t.unfavorite : t.favorite} aria-pressed={prompt.isFavorite} onClick={() => onFavorite(prompt)}>
+          <Star size={16} fill={prompt.isFavorite ? 'currentColor' : 'none'} aria-hidden="true" /><span>{prompt.isFavorite ? t.unfavorite : t.favorite}</span>
+        </button>
+        <button className="text-button" disabled={busy} aria-label={t.edit} title={t.edit} onClick={() => onEdit(prompt)}><Pencil size={16} aria-hidden="true" /><span>{t.edit}</span></button>
+        <button className="text-button danger" disabled={busy} aria-label={t.delete} title={t.delete} onClick={() => onDelete(prompt)}><Trash2 size={16} aria-hidden="true" /><span>{t.delete}</span></button>
       </div>
-
-      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-        <div className="text-xs text-gray-500" title={new Date(dateModified).toLocaleString()}>
-          修改于 {formatRelativeTime(dateModified)}
-        </div>
-
-        <div className="flex space-x-1">
-          <button
-            className="p-1.5 text-gray-500 hover:text-primary-500 hover:bg-primary-50 rounded-md transition-colors"
-            onClick={() => onCopy(id)}
-            title="复制提示词"
-          >
-            <CopyIcon size={16} />
-          </button>
-          <button
-            className="p-1.5 text-gray-500 hover:text-primary-500 hover:bg-primary-50 rounded-md transition-colors"
-            onClick={onEdit}
-            title="编辑提示词"
-          >
-            <PencilIcon size={16} />
-          </button>
-          <button
-            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-            onClick={() => onDelete(id)}
-            title="删除提示词"
-          >
-            <TrashIcon size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default PromptCard;
+    </footer>
+  </article>;
+}

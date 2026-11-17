@@ -1,25 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/x-icon" href="/logo.ico" />
+  <link rel="icon" type="image/svg+xml" href="/mark.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PromptGenie</title>
+  <meta name="theme-color" content="#172c2b" />
+  <title>Prompt Note</title>
 </head>
 
 <body>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
-  <script type="module">
-    // 只在生产环境禁用右键菜单
-    if (import.meta.env.PROD) {
-      document.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        return false;
-      }, false);
-    }
-  </script>
 </body>
 
 </html>

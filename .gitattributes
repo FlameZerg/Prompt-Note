@@ -1,0 +1,2 @@
+# 迁移校验依赖原始字节，禁止 Windows 检出时改写换行。
+src-tauri/db/*.sql text eol=lf
