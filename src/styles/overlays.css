@@ -1,0 +1,54 @@
+.dialog { margin: auto; background: var(--color-surface); color: var(--color-text); width: min(640px, calc(100% - 32px)); max-height: calc((100dvh - 40px) / var(--page-zoom, 1)); padding: 0; border: 1px solid var(--color-border); border-radius: 20px; box-shadow: var(--shadow-dialog); overflow-y: auto; animation: dialog-enter var(--duration-enter) var(--ease-enter); }
+.dialog::backdrop { background: var(--scrim); }
+.dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 21px 26px; border-bottom: 1px solid var(--color-border); gap: 16px; }
+.dialog-header h2 { font-size: 20px; font-weight: 600; }
+.editor-form { padding: 25px 26px 22px; display: flex; flex-direction: column; gap: 22px; }
+.field { display: flex; flex-direction: column; gap: 9px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.field label, .field legend { color: var(--color-text); font-weight: 600; font-size: 13px; }
+.field > label { display: flex; justify-content: space-between; }
+.field-count { font-variant-numeric: tabular-nums; color: var(--color-secondary); font-size: 11px; font-weight: 400; }
+.field input:not([type="checkbox"]), .field textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--input-bg); color: var(--color-text); min-width: 0; }
+/* 在前次增高两成的基础上再增一成，累计为原八行及 26px 内边距、边框基准的 1.32 倍。 */
+.field textarea { line-height: 1.8; resize: vertical; height: calc((8lh + 26px) * 1.32); min-height: 198px; max-height: 59.4dvh; }
+.field small { font-size: 12px; color: var(--color-secondary); font-weight: 400; }
+.field legend { margin-bottom: 10px; }
+.category-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.category-choice { padding: 10px 13px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); cursor: pointer; max-width: 100%; }
+.category-choice span { overflow-wrap: anywhere; min-width: 0; }
+.category-choice.selected { background: var(--color-selected); border-color: var(--color-accent-border); color: var(--color-primary); }
+.category-choice input { flex-shrink: 0; width: 15px; height: 15px; }
+.dialog-footer { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--color-border); padding-top: 20px; flex-wrap: wrap; }
+.dialog-description { color: var(--color-secondary); line-height: 1.8; }
+.form-error { color: var(--color-danger); font-size: 13px; }
+/* 配色预览独立使用自身令牌，文字与勾选状态仍跟随当前主题，避免仅靠颜色辨识。 */
+.palette-settings { border: 0; margin: 0; padding: 20px; min-width: 0; }
+.palette-settings legend { float: left; width: 100%; padding: 0; font-size: 14px; font-weight: 600; }
+.palette-settings > p { clear: both; padding-top: 6px; color: var(--color-secondary); font-size: 12px; }
+.palette-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 12px; margin-top: 18px; }
+.palette-choice { display: flex; flex-direction: column; gap: 12px; min-width: 0; position: relative; border: 2px solid var(--color-border); border-radius: var(--radius-sm); padding: 12px; cursor: pointer; background: var(--color-surface); }
+.palette-choice:hover, .palette-choice.selected { border-color: var(--color-primary); }
+.palette-choice:focus-within { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+.palette-choice input { position: absolute; top: 14px; right: 14px; width: 16px; height: 16px; margin: 0; cursor: pointer; }
+.palette-preview { display: flex; flex-direction: column; gap: 6px; height: 68px; padding: 14px 38px 14px 24px; border-radius: 6px; background: linear-gradient(90deg, var(--accent-nav) 12px, var(--accent-soft) 12px); }
+.palette-preview > span { height: 5px; background: var(--accent-border); border-radius: 2px; }
+.palette-preview > span:first-child { width: 60%; background: var(--accent-strong); }
+.palette-preview > span:last-child { width: 75%; }
+.palette-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
+.palette-name svg { visibility: hidden; color: var(--color-primary); }
+.palette-choice.selected .palette-name svg { visibility: visible; }
+.toast-stack { position: fixed; z-index: 100; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 11px; padding: 10px 12px 10px 18px; background: var(--toast-bg); color: var(--white); border: 1px solid var(--nav-hover); border-radius: 12px; box-shadow: var(--shadow-raised); min-height: 48px; pointer-events: auto; animation: toast-enter var(--duration-enter) var(--ease-enter); font-size: 13px; }
+.toast > span { flex: 1; overflow-wrap: anywhere; }
+.toast > svg { color: var(--nav-accent); }
+.toast-error { background: var(--color-danger-background); color: var(--color-danger); border-color: var(--color-danger); }
+.toast-error > svg { color: var(--color-danger); }
+.toast .icon-button { min-width: 32px; min-height: 32px; }
+.toast-success .icon-button:hover, .toast-info .icon-button:hover { background: var(--nav-hover); }
+@keyframes toast-enter { from { transform: translateY(8px); opacity: .7; } to { transform: translateY(0); opacity: 1; } }
+@keyframes dialog-enter { from { transform: translateY(8px); opacity: .8; } to { transform: translateY(0); opacity: 1; } }
+@media (max-width: 620px) {
+  .dialog { width: calc(100% - 20px); max-height: calc((100dvh - 20px) / var(--page-zoom, 1)); border-radius: 14px; }
+  .dialog-header { padding: 16px 18px; }
+  .editor-form { padding: 18px; gap: 18px; }
+  .dialog-footer .button { flex: 1; white-space: normal; }
+}

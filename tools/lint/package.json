@@ -1,0 +1,11 @@
+{
+  "name": "@prompt-note/lint-api",
+  "private": true,
+  "type": "module",
+  "description": "Isolated JS compiler API for the official typescript-eslint parser; application tsc remains TypeScript 7.",
+  "dependencies": {
+    "eslint": "10.15.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2"
+  }
+}
